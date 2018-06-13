@@ -16,7 +16,7 @@
 #define JOINT_MAX	 2.0f
 
 // Turn on velocity based control
-#define VELOCITY_CONTROL true
+#define VELOCITY_CONTROL false
 #define VELOCITY_MIN -0.2f
 #define VELOCITY_MAX  0.2f
 
@@ -27,7 +27,7 @@
 #define DEBUG_DQN false
 #define GAMMA 0.9f
 #define EPS_START 0.9f
-#define EPS_END 0.05f
+#define EPS_END 0.01f
 #define EPS_DECAY 200
 #define NUM_ACTIONS 6
 
@@ -269,9 +269,9 @@ void ArmPlugin::onCollisionMsg(ConstContactsPtr &contacts)
 	
 		/*
 		/ TODO - Check if there is collision between the arm and object, then issue learning reward
-		/tube_collision
 		*/
-		//bool collisionCheck = false;
+      	/*
+        //--------------- Check collision for task 1
         if(strcmp(contacts->contact(i).collision1().c_str(), COLLISION_ITEM)==0 || strcmp(contacts->contact(i).collision2().c_str(), COLLISION_ITEM)==0 || 
          strcmp(COLLISION_POINT, COLLISION_ITEM)==0 )
         {
@@ -281,19 +281,20 @@ void ArmPlugin::onCollisionMsg(ConstContactsPtr &contacts)
 					endEpisode = true;
             		return;
 
+        }*/
+		//-----------------Check Collision for task2
+        if(strcmp(contacts->contact(i).collision2().c_str(),COLLISION_POINT) == 0 || strcmp(contacts->contact(i).collision2().c_str(),"arm::gripperbase::middle_collision") == 0)
+        {
+          
+					rewardHistory = REWARD_WIN*1000.0f + 100.0f; // Making high reward for the base collision 
+					newReward  = true;
+					endEpisode = true;
+            		return;
+
         }
-		/*
+       
+        
 		
-		if (collisionCheck)
-		{
-			rewardHistory = None;
-
-			newReward  = None;
-			endEpisode = None;
-
-			return;
-		}
-		*/
 		
 	}
 }
@@ -600,7 +601,7 @@ void ArmPlugin::OnUpdate(const common::UpdateInfo& updateInfo)
 
 		// get the bounding box for the gripper		
 		const math::Box& gripBBox = gripper->GetBoundingBox();
-		const float groundContact = 0.05f;
+		const float groundContact = 0.05f; // for task two, i lowered the threshold to encourage it come colse to the object 
 		
 		/*
 		/ TODO - set appropriate Reward for robot hitting the ground.
@@ -634,6 +635,7 @@ void ArmPlugin::OnUpdate(const common::UpdateInfo& updateInfo)
 		if(!checkGroundContact)
 		{
 			const float distGoal = BoxDistance(gripBBox, propBBox); // compute the reward from distance to the goal
+            const float distGoalx = abs(gripBBox.min.x - propBBox.min.x );
 
 			if(DEBUG){printf("distance('%s', '%s') = %f\n", gripper->GetName().c_str(), prop->model->GetName().c_str(), distGoal);}
 
@@ -641,11 +643,23 @@ void ArmPlugin::OnUpdate(const common::UpdateInfo& updateInfo)
 			if( episodeFrames > 1 )
 			{
 				const float distDelta  = lastGoalDistance - distGoal;
-
+                
 				// compute the smoothed moving average of the delta of the distance to the goal
                 const float alpha = 0.9f;
 				avgGoalDelta  = (distDelta * alpha) + (distGoal * (1.0f - alpha));
-                rewardHistory = avgGoalDelta *10.0f + (REWARD_WIN * 10.0f) + (1.0f - exp(distGoal))*5.0f ;//- (distGoal * 10.0f)
+                
+               //rewardHistory = avgGoalDelta *10.0f + (REWARD_WIN * 10.0f) + (1.0f - exp(distGoal))*5.0f ; //task1 reward
+                //rewardHistory = (REWARD_WIN * 10.0f) + (1.0f - exp(distGoal))*10.0f - distGoal*10.0f + (1.0f - exp(distGoalx))*10.0f  ; //task2 reward trial// avgGoalDelta *5.0f + 
+                if (distDelta >= 0.0f) // Moving closer to the object
+                {
+                 rewardHistory = avgGoalDelta *10.0f+(REWARD_WIN * 10.0f) - distGoalx*10.0f + (1.0f - exp(distGoal))*10.0f; 
+                }
+                else
+                {
+                 rewardHistory =  (REWARD_LOSS * 10.0f) - distGoal*10.0f ; //+ (1.0f - exp(distGoalx))*10.0f  ; 
+                }
+                
+                
 				newReward     = true;
 				
 					
