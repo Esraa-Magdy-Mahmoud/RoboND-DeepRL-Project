@@ -16,7 +16,7 @@
 #define JOINT_MAX	 2.0f
 
 // Turn on velocity based control
-#define VELOCITY_CONTROL false
+#define VELOCITY_CONTROL true
 #define VELOCITY_MIN -0.2f
 #define VELOCITY_MAX  0.2f
 
@@ -29,28 +29,29 @@
 #define EPS_START 0.9f
 #define EPS_END 0.05f
 #define EPS_DECAY 200
+#define NUM_ACTIONS 6
 
 /*
 / TODO - Tune the following hyperparameters
 /
 */
 
-#define INPUT_WIDTH   512
-#define INPUT_HEIGHT  512
-#define OPTIMIZER "None"
-#define LEARNING_RATE 0.0f
+#define INPUT_WIDTH   64
+#define INPUT_HEIGHT  64
+#define OPTIMIZER "RMSprop"
+#define LEARNING_RATE 0.01f
 #define REPLAY_MEMORY 10000
-#define BATCH_SIZE 8
-#define USE_LSTM false
-#define LSTM_SIZE 32
+#define BATCH_SIZE 64
+#define USE_LSTM true
+#define LSTM_SIZE 256
 
 /*
 / TODO - Define Reward Parameters
 /
 */
 
-#define REWARD_WIN  0.0f
-#define REWARD_LOSS -0.0f
+#define REWARD_WIN  1.0f
+#define REWARD_LOSS -1.0f
 
 // Define Object Names
 #define WORLD_NAME "arm_world"
@@ -67,6 +68,7 @@
 
 // Set Debug Mode
 #define DEBUG false
+#define DEBUG_ACCURACY true
 
 // Lock base rotation DOF (Add dof in header file if off)
 #define LOCKBASE true
@@ -135,10 +137,9 @@ void ArmPlugin::Load(physics::ModelPtr _parent, sdf::ElementPtr /*_sdf*/)
 	
 	/*
 	/ TODO - Subscribe to camera topic
-	/
 	*/
 	
-	//cameraSub = None;
+	cameraSub = cameraNode->Subscribe("/gazebo/arm_world/camera/link/camera/image",  &ArmPlugin::onCameraMsg, this);
 
 	// Create our node for collision detection
 	collisionNode->Init();
@@ -148,7 +149,9 @@ void ArmPlugin::Load(physics::ModelPtr _parent, sdf::ElementPtr /*_sdf*/)
 	/
 	*/
 	
-	//collisionSub = None;
+	
+   collisionSub = collisionNode->Subscribe("/gazebo/arm_world/tube/tube_link/my_contact", &ArmPlugin::onCollisionMsg, this);
+
 
 	// Listen to the update event. This event is broadcast every simulation iteration.
 	this->updateConnection = event::Events::ConnectWorldUpdateBegin(boost::bind(&ArmPlugin::OnUpdate, this, _1));
@@ -164,10 +167,16 @@ bool ArmPlugin::createAgent()
 			
 	/*
 	/ TODO - Create DQN Agent
+            // Create reinforcement learner agent in pyTorch
 	/
 	*/
 	
-	agent = NULL;
+	
+    agent = dqnAgent::Create(INPUT_WIDTH, INPUT_HEIGHT, 
+                       INPUT_CHANNELS, NUM_ACTIONS, OPTIMIZER, 
+                       LEARNING_RATE, REPLAY_MEMORY, BATCH_SIZE, 
+                       GAMMA, EPS_START, EPS_END, EPS_DECAY,
+                       USE_LSTM, LSTM_SIZE, ALLOW_RANDOM, DEBUG_DQN); 
 
 	if( !agent )
 	{
@@ -260,9 +269,19 @@ void ArmPlugin::onCollisionMsg(ConstContactsPtr &contacts)
 	
 		/*
 		/ TODO - Check if there is collision between the arm and object, then issue learning reward
-		/
+		/tube_collision
 		*/
-		
+		//bool collisionCheck = false;
+        if(strcmp(contacts->contact(i).collision1().c_str(), COLLISION_ITEM)==0 || strcmp(contacts->contact(i).collision2().c_str(), COLLISION_ITEM)==0 || 
+         strcmp(COLLISION_POINT, COLLISION_ITEM)==0 )
+        {
+          
+					rewardHistory = REWARD_WIN*20.0f + 10.0f;
+					newReward  = true;
+					endEpisode = true;
+            		return;
+
+        }
 		/*
 		
 		if (collisionCheck)
@@ -322,8 +341,12 @@ bool ArmPlugin::updateAgent()
 	/ TODO - Increase or decrease the joint velocity based on whether the action is even or odd
 	/
 	*/
-	
-	float velocity = 0.0; // TODO - Set joint velocity based on whether action is even or odd.
+	int action_type = -1; 
+        if(action%2 == 0)
+	{
+		action_type = 1;
+	}
+	float velocity = vel[action/2] + (actionVelDelta*action_type); // TODO - Set joint velocity based on whether action is even or odd.
 
 	if( velocity < VELOCITY_MIN )
 		velocity = VELOCITY_MIN;
@@ -354,7 +377,13 @@ bool ArmPlugin::updateAgent()
 	/ TODO - Increase or decrease the joint position based on whether the action is even or odd
 	/
 	*/
-	float joint = 0.0; // TODO - Set joint position based on whether action is even or odd.
+        int action_type = -1; 
+        if(action%2 == 0)
+	{
+		action_type = 1;
+	}
+        
+	float joint = ref[action/2] + (actionJointDelta*action_type); // TODO - Set joint position based on whether action is even or odd.
 
 	// limit the joint to the specified range
 	if( joint < JOINT_MIN )
@@ -577,28 +606,34 @@ void ArmPlugin::OnUpdate(const common::UpdateInfo& updateInfo)
 		/ TODO - set appropriate Reward for robot hitting the ground.
 		/
 		*/
+        bool checkGroundContact = false;
+		if(gripBBox.min.z < groundContact)
+		{
+			checkGroundContact = true;	
+		}
+                 
 		
 		
-		/*if(checkGroundContact)
+		if(checkGroundContact)
 		{
 						
 			if(DEBUG){printf("GROUND CONTACT, EOE\n");}
-
-			rewardHistory = None;
-			newReward     = None;
-			endEpisode    = None;
+           
+			rewardHistory = REWARD_LOSS*10.0f; 
+			newReward     = true;
+			endEpisode    = true;
 		}
-		*/
+		
 		
 		/*
 		/ TODO - Issue an interim reward based on the distance to the object
 		/
 		*/ 
 		
-		/*
+		
 		if(!checkGroundContact)
 		{
-			const float distGoal = 0; // compute the reward from distance to the goal
+			const float distGoal = BoxDistance(gripBBox, propBBox); // compute the reward from distance to the goal
 
 			if(DEBUG){printf("distance('%s', '%s') = %f\n", gripper->GetName().c_str(), prop->model->GetName().c_str(), distGoal);}
 
@@ -608,19 +643,22 @@ void ArmPlugin::OnUpdate(const common::UpdateInfo& updateInfo)
 				const float distDelta  = lastGoalDistance - distGoal;
 
 				// compute the smoothed moving average of the delta of the distance to the goal
-				avgGoalDelta  = 0.0;
-				rewardHistory = None;
-				newReward     = None;	
+                const float alpha = 0.9f;
+				avgGoalDelta  = (distDelta * alpha) + (distGoal * (1.0f - alpha));
+                rewardHistory = avgGoalDelta *10.0f + (REWARD_WIN * 10.0f) + (1.0f - exp(distGoal))*5.0f ;//- (distGoal * 10.0f)
+				newReward     = true;
+				
+					
 			}
 
 			lastGoalDistance = distGoal;
-		} */
+		} 
 	}
 
 	// issue rewards and train DQN
 	if( newReward && agent != NULL )
 	{
-		if(DEBUG){printf("ArmPlugin - issuing reward %f, EOE=%s  %s\n", rewardHistory, endEpisode ? "true" : "false", (rewardHistory > 0.1f) ? "POS+" :(rewardHistory > 0.0f) ? "POS" : (rewardHistory < 0.0f) ? "    NEG" : "       ZERO");}
+		if(DEBUG_ACCURACY){printf("ArmPlugin - issuing reward %f, EOE=%s  %s\n", rewardHistory, endEpisode ? "true" : "false", (rewardHistory > 0.1f) ? "POS+" :(rewardHistory > 0.0f) ? "POS" : (rewardHistory < 0.0f) ? "    NEG" : "       ZERO");}
 		agent->NextReward(rewardHistory, endEpisode);
 
 		// reset reward indicator
@@ -651,4 +689,5 @@ void ArmPlugin::OnUpdate(const common::UpdateInfo& updateInfo)
 }
 
 }
+
 
