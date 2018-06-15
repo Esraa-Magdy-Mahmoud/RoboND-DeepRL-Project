@@ -298,13 +298,13 @@ void ArmPlugin::onCollisionMsg(ConstContactsPtr &contacts)
             		return;
 
         }
-       else if ( (strcmp(contacts->contact(i).collision1().c_str(), "arm:link2")==0&& strcmp(contacts->contact(i).collision2().c_str(),COLLISION_ITEM) == 0 ) || 
+       /*else if ( (strcmp(contacts->contact(i).collision1().c_str(), "arm:link2")==0&& strcmp(contacts->contact(i).collision2().c_str(),COLLISION_ITEM) == 0 ) || 
                  (strcmp(contacts->contact(i).collision2().c_str(), "arm:link2")==0&& strcmp(contacts->contact(i).collision1().c_str(),COLLISION_ITEM) == 0 )
                )
         {          rewardHistory = REWARD_LOSS;
                     newReward  = true;
 					endEpisode = true;
-        }
+        }*/
        
         
 		
@@ -614,14 +614,14 @@ void ArmPlugin::OnUpdate(const common::UpdateInfo& updateInfo)
 
 		// get the bounding box for the gripper		
 		const math::Box& gripBBox = gripper->GetBoundingBox();
-		const float groundContact = 0.03f; 
+		const float groundContact = 0.05f; 
 		
 		/*
 		/ TODO - set appropriate Reward for robot hitting the ground.
 		/
 		*/
         bool checkGroundContact = false;
-		if(gripBBox.min.z < groundContact)
+		if(gripBBox.min.z <= groundContact || gripBBox.max.z <= groundContact)
 		{
 			checkGroundContact = true;	
 		}
@@ -630,7 +630,7 @@ void ArmPlugin::OnUpdate(const common::UpdateInfo& updateInfo)
 						
 			if(DEBUG){printf("GROUND CONTACT, EOE\n");}
            
-			rewardHistory = REWARD_LOSS*10.0f - (maxEpisodeLength-episodeFrames); 
+			rewardHistory = REWARD_LOSS*10.0f - ((maxEpisodeLength-episodeFrames)/maxEpisodeLength); 
 			newReward     = true;
 			endEpisode    = true;
 		}
@@ -659,11 +659,11 @@ void ArmPlugin::OnUpdate(const common::UpdateInfo& updateInfo)
 				const float distDelta  = lastGoalDistance - distGoal;
                 
 				// compute the smoothed moving average of the delta of the distance to the goal
-                const float alpha = 0.2f;
+                const float alpha = 0.3f;
 				avgGoalDelta  = (avgGoalDelta * alpha) + (distDelta * (1.0f - alpha));
                 
                //rewardHistory = avgGoalDelta *10.0f + (REWARD_WIN * 10.0f) + (1.0f - exp(distGoal))*5.0f ; //task1 reward
-                rewardHistory = tanh(avgGoalDelta) * 100.0f - exp(distGoal); //task2 -Reward
+                rewardHistory = tanh(avgGoalDelta) * 100.0f;//  distGoal; //task2 -Reward
                 newReward     = true;
 				
 					
