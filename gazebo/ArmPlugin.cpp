@@ -16,7 +16,7 @@
 #define JOINT_MAX	 2.0f
 
 // Turn on velocity based control
-#define VELOCITY_CONTROL false
+#define VELOCITY_CONTROL false // true for task1 , false for task2
 #define VELOCITY_MIN -0.2f
 #define VELOCITY_MAX  0.2f
 
@@ -273,7 +273,7 @@ void ArmPlugin::onCollisionMsg(ConstContactsPtr &contacts)
 									 strcmp(contacts->contact(i).collision2().c_str(), COLLISION_ITEM)==0 ;
 		if (checkObjectCollision)
 		{
-			rewardHistory = REWARD_WIN*100.0f + +(maxEpisodeLength-episodeFrames)* 100.0f;
+			rewardHistory = REWARD_WIN*100.0f+(maxEpisodeLength-episodeFrames)* 100.0f;
 			newReward  = true;
 			endEpisode = true;
 			return;
@@ -305,7 +305,7 @@ void ArmPlugin::onCollisionMsg(ConstContactsPtr &contacts)
         {          rewardHistory = REWARD_LOSS;
                     newReward  = true;
 					endEpisode = true;
-        }//*/
+        }///
 		
 	}
 }
@@ -648,6 +648,7 @@ void ArmPlugin::OnUpdate(const common::UpdateInfo& updateInfo)
 				// compute the smoothed moving average of the delta of the distance to the goal
 				const float alpha = 0.3f;
 				avgGoalDelta = (avgGoalDelta * alpha) + (distDelta * (1.0f - alpha));
+				//-- Reward for task 2 ---//
 				if(distDelta > 0)
 				{
 					rewardHistory = REWARD_WIN*10.0f + avgGoalDelta ;
@@ -659,8 +660,8 @@ void ArmPlugin::OnUpdate(const common::UpdateInfo& updateInfo)
 				else
 				{
 					rewardHistory = 0.0f;
-				}
-				//rewardHistory = (avgGoalDelta)*100 - abs(gripBBox.min.x - propBBox.min.x);
+				}///-----*/
+				//rewardHistory = tanh(avgGoalDelta)*100 ;//for task 1
 				newReward     = true;	
 			}
 			lastGoalDistance = distGoal;
